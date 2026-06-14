@@ -7,12 +7,13 @@
     <title>Mochila Digital</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* Sistema de vistas estricto */
         .view {
-            display: none;
+            display: none !important;
         }
 
         .view.active {
-            display: flex;
+            display: flex !important;
             flex-direction: column;
         }
     </style>
@@ -43,16 +44,16 @@
             </button>
         </div>
 
-        <div id="vista-que-rompimo" class="view hidden gap-4">
-            <div id="qr-app-container">Cargando base de datos...</div>
+        <div id="vista-que-rompimo" class="view">
+            <div id="qr-app-container" class="w-full flex flex-col gap-4">Cargando base de datos...</div>
         </div>
 
-        <div id="vista-tracker" class="view hidden gap-4">
-            <div id="tracker-app-container">Cargando flota...</div>
+        <div id="vista-tracker" class="view">
+            <div id="tracker-app-container" class="w-full flex flex-col gap-4">Cargando flota...</div>
         </div>
 
-        <div id="vista-truco" class="view hidden gap-4">
-            <div id="truco-app-container">Cargando anotador...</div>
+        <div id="vista-truco" class="view">
+            <div id="truco-app-container" class="w-full flex flex-col gap-4">Cargando anotador...</div>
         </div>
 
     </main>
@@ -64,12 +65,14 @@
     <script>
         // --- APARTADO A: NAVEGACIÓN SINGLE PAGE (SPA) INTELIGENTE ---
         function abrirModulo(moduloId, titulo, esInvitado = false) {
-            document.getElementById('vista-menu').classList.remove('active');
-            document.getElementById('vista-menu').classList.add('hidden');
+            // Apagamos todas las vistas de forma masiva para evitar solapamientos
+            document.querySelectorAll('main > .view').forEach(div => {
+                div.classList.remove('active');
+            });
 
+            // Encendemos la que corresponde
             const vistaModulo = document.getElementById('vista-' + moduloId);
-            vistaModulo.classList.remove('hidden');
-            vistaModulo.classList.add('active');
+            if (vistaModulo) vistaModulo.classList.add('active');
 
             document.getElementById('titulo-app').innerText = titulo;
 
@@ -84,13 +87,13 @@
         function irAlMenu() {
             document.querySelectorAll('main > .view').forEach(div => {
                 div.classList.remove('active');
-                div.classList.add('hidden');
             });
-            document.getElementById('vista-menu').classList.remove('hidden');
+            
             document.getElementById('vista-menu').classList.add('active');
             document.getElementById('titulo-app').innerText = '🎒 Mochila Digital';
             document.getElementById('btn-volver').classList.add('hidden');
 
+            // Limpiamos la URL sin recargar la página para que no quede el ?room dando vueltas si salimos voluntariamente
             window.history.replaceState({}, document.title, window.location.pathname);
         }
 
@@ -99,11 +102,10 @@
             const urlParams = new URLSearchParams(window.location.search);
 
             if (urlParams.has('room')) {
-                // Si tiene la URL una sala, asumimos que es un invitado externo
-                // Le pasamos 'true' para ocultarle el botón volver y el menú
+                // Si la URL trae sala (invitado), lo metemos directo a Que Rompimo en modo estricto
                 abrirModulo('que-rompimo', '💸 Que Rompimo', true);
             }
-            // Si no tiene 'room' en la URL, entra directo a tu menú principal de Mochila Digital
+            // Si la URL está limpia, por descarte queda activa 'vista-menu' por su clase HTML inicial
         });
     </script>
 </body>
