@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mochila Digital</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .view {
+            display: none;
+        }
+
+        .view.active {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-950 text-slate-50 min-h-screen flex flex-col font-sans select-none">
+
+    <header class="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 flex justify-between items-center z-50">
+        <h1 id="titulo-app" class="text-xl font-bold text-emerald-400">🎒 Mochila Digital</h1>
+        <button id="btn-volver" onclick="irAlMenu()"
+            class="hidden bg-slate-800 px-3 py-1 rounded text-sm hover:bg-slate-700 transition">Volver</button>
+    </header>
+
+    <main class="p-4 w-full max-w-md mx-auto flex-grow flex flex-col justify-start">
+
+        <div id="vista-menu" class="view active grid grid-cols-2 gap-4">
+            <button onclick="abrirModulo('que-rompimo', '💸 Que Rompimo')"
+                class="bg-gradient-to-br from-emerald-700 to-teal-900 p-4 rounded-2xl shadow-lg border border-emerald-600/30 flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="text-3xl">💸</span><span class="font-bold text-sm">Que Rompimo</span>
+            </button>
+            <button onclick="abrirModulo('tracker', '🏍️ Mis Ruedas')"
+                class="bg-gradient-to-br from-blue-700 to-indigo-900 p-4 rounded-2xl shadow-lg border border-blue-600/30 flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="text-3xl">🏍️</span><span class="font-bold text-sm">Mis Ruedas</span>
+            </button>
+            <button onclick="abrirModulo('truco', '⚔️ Anotador Truco')"
+                class="bg-gradient-to-br from-red-700 to-orange-900 p-4 rounded-2xl shadow-lg border border-red-600/30 flex flex-col items-center gap-2 active:scale-95 transition">
+                <span class="text-3xl">⚔️</span><span class="font-bold text-sm">Truco</span>
+            </button>
+        </div>
+
+        <div id="vista-que-rompimo" class="view hidden gap-4">
+            <div id="qr-app-container">Cargando base de datos...</div>
+        </div>
+
+        <div id="vista-tracker" class="view hidden gap-4">
+            <div id="tracker-app-container">Cargando flota...</div>
+        </div>
+
+        <div id="vista-truco" class="view hidden gap-4">
+            <div id="truco-app-container">Cargando anotador...</div>
+        </div>
+
+    </main>
+
+    <script type="module" src="./modulos/que-rompimo.js"></script>
+    <script type="module" src="./modulos/tracker.js"></script>
+    <script type="module" src="./modulos/truco.js"></script>
+
+    <script>
+        // --- APARTADO A: NAVEGACIÓN SINGLE PAGE (SPA) INTELIGENTE ---
+        function abrirModulo(moduloId, titulo, esInvitado = false) {
+            document.getElementById('vista-menu').classList.remove('active');
+            document.getElementById('vista-menu').classList.add('hidden');
+
+            const vistaModulo = document.getElementById('vista-' + moduloId);
+            vistaModulo.classList.remove('hidden');
+            vistaModulo.classList.add('active');
+
+            document.getElementById('titulo-app').innerText = titulo;
+
+            const btnVolver = document.getElementById('btn-volver');
+            if (esInvitado) {
+                btnVolver.classList.add('hidden');
+            } else {
+                btnVolver.classList.remove('hidden');
+            }
+        }
+
+        function irAlMenu() {
+            document.querySelectorAll('main > .view').forEach(div => {
+                div.classList.remove('active');
+                div.classList.add('hidden');
+            });
+            document.getElementById('vista-menu').classList.remove('hidden');
+            document.getElementById('vista-menu').classList.add('active');
+            document.getElementById('titulo-app').innerText = '🎒 Mochila Digital';
+            document.getElementById('btn-volver').classList.add('hidden');
+
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        // GUARDIÁN DE LA URL INTELIGENTE
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+
+            if (urlParams.has('room')) {
+                // Si tiene la URL una sala, asumimos que es un invitado externo
+                // Le pasamos 'true' para ocultarle el botón volver y el menú
+                abrirModulo('que-rompimo', '💸 Que Rompimo', true);
+            }
+            // Si no tiene 'room' en la URL, entra directo a tu menú principal de Mochila Digital
+        });
+    </script>
+</body>
+
+</html>

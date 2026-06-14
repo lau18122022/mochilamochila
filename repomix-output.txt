@@ -1,0 +1,498 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mochila Digital</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .view {
+            display: none;
+        }
+
+        .view.active {
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-950 text-slate-50 min-h-screen flex flex-col font-sans select-none">
+
+    <header class="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 flex justify-between items-center z-50">
+        <h1 id="titulo-app" class="text-xl font-bold text-emerald-400">ðŸŽ’ Mochila Digital</h1>
+        <button id="btn-volver" onclick="irAlMenu()"
+            class="hidden bg-slate-800 px-3 py-1 rounded text-sm hover:bg-slate-700 transition">Volver</button>
+    </header>
+
+    <main class="p-4 w-full max-w-md mx-auto flex-grow flex flex-col justify-start">
+
+        <div id="vista-menu" class="view active grid grid-cols-2 gap-4">
+            <button onclick="abrirModulo('que-rompimo', 'ðŸ’¸ Que Rompimo')"
+                class="bg-gradient-to-br from-emerald-700 to-teal-900 p-4 rounded-2xl shadow-lg border border-emerald-600/30 flex flex-col items-center gap-2">
+                <span class="text-3xl">ðŸ’¸</span><span class="font-bold text-sm">Que Rompimo</span>
+            </button>
+            <button onclick="abrirModulo('tracker', 'ðŸ”§ Mis VehÃ­culos')"
+                class="bg-gradient-to-br from-blue-700 to-indigo-900 p-4 rounded-2xl shadow-lg border border-blue-600/30 flex flex-col items-center gap-2">
+                <span class="text-3xl">ðŸ”§</span><span class="font-bold text-sm">Services</span>
+            </button>
+            <button onclick="abrirModulo('truco', 'âš”ï¸ Anotador Truco')"
+                class="bg-gradient-to-br from-red-700 to-orange-900 p-4 rounded-2xl shadow-lg border border-red-600/30 flex flex-col items-center gap-2">
+                <span class="text-3xl">âš”ï¸</span><span class="font-bold text-sm">Truco</span>
+            </button>
+        </div>
+
+        <div id="vista-que-rompimo" class="view hidden gap-4">
+            <div id="qr-app-container">Cargando base de datos...</div>
+        </div>
+
+        <div id="vista-tracker" class="view hidden gap-4">
+            <div id="tracker-app-container">Cargando flota...</div>
+        </div>
+
+        <div id="vista-truco" class="view hidden gap-4">
+            <div id="truco-app-container" class="text-center mt-10 text-slate-400">Interfaz de truco en construcciÃ³n...
+            </div>
+        </div>
+
+    </main>
+
+    <script type="module" src="./modulos/que-rompimo.js"></script>
+    <script type="module" src="./modulos/tracker.js"></script>
+
+    <script>
+        // --- APARTADO A: NAVEGACIÃ“N SINGLE PAGE (SPA) INTELIGENTE ---
+        function abrirModulo(moduloId, titulo, esInvitado = false) {
+            document.getElementById('vista-menu').classList.remove('active');
+            document.getElementById('vista-menu').classList.add('hidden');
+
+            const vistaModulo = document.getElementById('vista-' + moduloId);
+            vistaModulo.classList.remove('hidden');
+            vistaModulo.classList.add('active');
+
+            document.getElementById('titulo-app').innerText = titulo;
+
+            // Si es un invitado externo, destruimos el botÃ³n volver para que no husmee la app
+            const btnVolver = document.getElementById('btn-volver');
+            if (esInvitado) {
+                btnVolver.classList.add('hidden');
+            } else {
+                btnVolver.classList.remove('hidden');
+            }
+        }
+
+        function irAlMenu() {
+            document.querySelectorAll('main > .view').forEach(div => {
+                div.classList.remove('active');
+                div.classList.add('hidden');
+            });
+            document.getElementById('vista-menu').classList.remove('hidden');
+            document.getElementById('vista-menu').classList.add('active');
+            document.getElementById('titulo-app').innerText = 'ðŸŽ’ Mochila Digital';
+            document.getElementById('btn-volver').classList.add('hidden');
+
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        // GUARDIÃN DE LA URL: Se ejecuta apenas se abre la app
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            // Si la URL contiene una sala, es un amigo del viaje
+            if (urlParams.has('room')) {
+                abrirModulo('que-rompimo', 'ðŸ’¸ Que Rompimo', true);
+            }
+        });
+    </script>
+</body>
+
+</html>
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+// Importamos la configuraciÃ³n protegida
+import { firebaseConfig } from "./firebase-config.js";
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Detectar o generar ID de viaje Ãºnico
+const urlParams = new URLSearchParams(window.location.search);
+let roomId = urlParams.get('room');
+if (!roomId) {
+    roomId = 'viaje-' + Math.random().toString(36).substr(2, 9);
+    window.history.replaceState({}, document.title, `?room=${roomId}`);
+}
+
+const linkCompartir = window.location.href;
+let grupoSincronizado = [];
+let listaGastosAmigos = [];
+
+// Contenedor base de la interfaz
+const container = document.getElementById('qr-app-container');
+
+// --- ESCUCHA DE DATOS MAESTRA (TIEMPO REAL) ---
+// Escuchamos el documento de la sala para saber si el grupo ya estÃ¡ configurado
+onSnapshot(doc(db, "salas", roomId), (docSnap) => {
+    if (docSnap.exists() && docSnap.data().integrantes) {
+        grupoSincronizado = docSnap.data().integrantes;
+        // Si el grupo existe, nos suscribimos a sus gastos
+        activarEscuchaGastos();
+    } else {
+        // Si el grupo no existe, mostramos pantalla para inicializar el viaje
+        renderizarConfiguracionGrupo();
+    }
+});
+
+// --- PANTALLA A: CREACIÃ“N DEL VIAJE ---
+function renderizarConfiguracionGrupo() {
+    container.innerHTML = `
+        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-4">
+            <div class="border-b border-slate-800 pb-2">
+                <h2 class="font-bold text-emerald-400 text-sm uppercase tracking-wider">Configurar Nuevo Viaje</h2>
+                <p class="text-xs text-slate-400 mt-0.5">DefinÃ­ quiÃ©nes van a compartir gastos este finde.</p>
+            </div>
+            <div class="flex gap-2">
+                <input id="qr-setup-nombre" type="text" placeholder="Nombre (ej. LAU)" class="flex-grow bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white uppercase focus:outline-none focus:border-emerald-500">
+                <button id="qr-btn-add-setup" class="bg-slate-700 hover:bg-slate-600 px-4 rounded-lg font-bold text-xl">+</button>
+            </div>
+            <div id="qr-setup-lista" class="flex flex-wrap gap-2 text-xs font-medium"></div>
+            <button id="qr-btn-confirmar-viaje" class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-2.5 rounded-lg text-sm transition shadow-lg hidden">
+                Confirmar Grupo e Iniciar Viaje ðŸš€
+            </button>
+        </div>
+    `;
+
+    const input = document.getElementById('qr-setup-nombre');
+    const btnAdd = document.getElementById('qr-btn-add-setup');
+    const listaDiv = document.getElementById('qr-setup-lista');
+    const btnConfirmar = document.getElementById('qr-btn-confirmar-viaje');
+    let listaLocalAmigos = [];
+
+    btnAdd.addEventListener('click', () => {
+        const nombre = input.value.trim().toUpperCase();
+        if(!nombre || listaLocalAmigos.includes(nombre)) return;
+        listaLocalAmigos.push(nombre);
+        input.value = '';
+        
+        listaDiv.innerHTML = listaLocalAmigos.map(n => `<span class="bg-slate-800 border border-slate-700 px-2 py-1 rounded-md text-slate-300">${n}</span>`).join('');
+        if(listaLocalAmigos.length >= 2) btnConfirmar.classList.remove('hidden');
+    });
+
+    btnConfirmar.addEventListener('click', async () => {
+        // Grabamos la lista definitiva en la nube
+        await setDoc(doc(db, "salas", roomId), { integrantes: listaLocalAmigos });
+    });
+}
+
+// --- PANTALLA B: SEGUIMIENTO DEL VIAJE Y CARGA DE GASTOS ---
+function activarEscuchaGastos() {
+    const q = query(collection(db, "salas", roomId, "gastos"), orderBy("fecha", "desc"));
+    onSnapshot(q, (snapshot) => {
+        listaGastosAmigos = [];
+        snapshot.forEach((doc) => listaGastosAmigos.push(doc.data()));
+        renderizarInterfazOperativa();
+    });
+}
+
+function renderizarInterfazOperativa() {
+    container.innerHTML = `
+        <div class="bg-indigo-950/40 border border-indigo-500/20 p-3 rounded-xl mb-4 flex justify-between items-center">
+            <div class="text-xs text-indigo-200 truncate pr-2">
+                <span class="font-bold text-emerald-400">Â¡Grupo Activo!</span> CompartÃ­ este link con tus amigos.
+            </div>
+            <button id="btn-copiar-link" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded text-xs font-bold transition shrink-0">Copiar Link</button>
+        </div>
+        
+        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3 mb-4">
+            <h2 class="font-bold text-emerald-400 text-xs uppercase tracking-wider">Cargar Gasto</h2>
+            
+            <select id="qr-pagador" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+                <option value="">Â¿QuiÃ©n pagÃ³?</option>
+                ${grupoSincronizado.map(n => `<option value="${n}">${n}</option>`).join('')}
+            </select>
+            
+            <input id="qr-monto" type="number" placeholder="Monto total ($)" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+            <input id="qr-detalle" type="text" placeholder="Â¿QuÃ© se comprÃ³? (ej. Nafta, Peaje)" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500">
+            
+            <div class="pt-2 border-t border-slate-800">
+                <p class="text-[11px] text-slate-400 mb-2">Â¿QuiÃ©nes comparten este gasto?</p>
+                <div id="qr-participantes-box" class="flex flex-wrap gap-2 text-xs">
+                    ${grupoSincronizado.map(n => `
+                        <label class="flex items-center gap-1.5 cursor-pointer bg-slate-950 border border-slate-800 px-2.5 py-1.5 rounded-lg">
+                            <input type="checkbox" value="${n}" checked class="w-4 h-4 accent-emerald-500">
+                            <span class="text-slate-300 font-medium">${n}</span>
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+            <button id="btn-subir-gasto" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg transition text-sm">Cargar Gasto</button>
+        </div>
+
+        <div class="bg-indigo-950/60 p-4 rounded-xl border border-indigo-900/60 mb-4">
+            <h3 class="font-bold text-indigo-400 text-xs uppercase tracking-wider mb-2">Transferencias para liquidar</h3>
+            <div id="qr-resultados" class="text-sm text-indigo-100 space-y-1.5 font-medium"></div>
+        </div>
+
+        <div class="space-y-2">
+            <h3 class="font-bold text-slate-500 text-xs uppercase tracking-wider">Historial del Viaje</h3>
+            <ul id="qr-historial-nube" class="space-y-2"></ul>
+        </div>
+    `;
+
+    // Evento Copiar Link
+    document.getElementById('btn-copiar-link').addEventListener('click', () => {
+        navigator.clipboard.writeText(linkCompartir);
+        alert('Â¡Link de viaje copiado! Pasalo al grupo de WhatsApp.');
+    });
+
+    // Evento Subir Gasto
+    document.getElementById('btn-subir-gasto').addEventListener('click', async () => {
+        const pagador = document.getElementById('qr-pagador').value;
+        const monto = parseFloat(document.getElementById('qr-monto').value);
+        const detalle = document.getElementById('qr-detalle').value.trim();
+        const checkboxes = document.querySelectorAll('#qr-participantes-box input:checked');
+        const participantes = Array.from(checkboxes).map(cb => cb.value);
+
+        if (!pagador || isNaN(monto) || monto <= 0 || !detalle || participantes.length === 0) {
+            alert("CompletÃ¡ todos los campos y marcÃ¡ quiÃ©nes participaron.");
+            return;
+        }
+
+        await addDoc(collection(db, "salas", roomId, "gastos"), {
+            pagador, monto, detalle, participantes, fecha: new Date()
+        });
+
+        document.getElementById('qr-monto').value = '';
+        document.getElementById('qr-detalle').value = '';
+    });
+
+    renderizarHistorialYCalculos();
+}
+
+// --- CALCULO MÃ“DULO SPLITWISE ---
+function renderizarHistorialYCalculos() {
+    const historialUL = document.getElementById('qr-historial-nube');
+    const cajaResultados = document.getElementById('qr-resultados');
+
+    if(listaGastosAmigos.length === 0) {
+        historialUL.innerHTML = `<li class="text-xs text-slate-500 italic">No hay gastos registrados en este viaje.</li>`;
+        cajaResultados.innerHTML = `<p class="text-slate-400 text-xs">CargÃ¡ un gasto para ver balances.</p>`;
+        return;
+    }
+
+    // Historial
+    historialUL.innerHTML = listaGastosAmigos.map(g => `
+        <li class="bg-slate-900/60 p-3 rounded-xl flex flex-col border border-slate-800 text-sm">
+            <div class="flex justify-between items-center">
+                <span><strong class="text-emerald-400">${g.pagador}</strong> pagÃ³ ${g.detalle}</span>
+                <span class="font-mono font-bold text-slate-200">$${g.monto}</span>
+            </div>
+            <div class="text-[10px] text-slate-500 mt-1">Compartido entre: ${g.participantes.join(', ')}</div>
+        </li>
+    `).join('');
+
+    // Algoritmo de balances lÃ­quidos
+    let balances = {};
+    grupoSincronizado.forEach(n => balances[n] = 0);
+
+    listaGastosAmigos.forEach(g => {
+        balances[g.pagador] += g.monto;
+        const cuota = g.monto / g.participantes.length;
+        g.participantes.forEach(p => { if(balances[p] !== undefined) balances[p] -= cuota; });
+    });
+
+    let deudores = [], acreedores = [];
+    for (let persona in balances) {
+        let saldo = parseFloat(balances[persona].toFixed(2));
+        if (saldo < -0.01) deudores.push({ nombre: persona, monto: Math.abs(saldo) });
+        if (saldo > 0.01) acreedores.push({ nombre: persona, monto: saldo });
+    }
+
+    deudores.sort((a, b) => b.monto - a.monto);
+    acreedores.sort((a, b) => b.monto - a.monto);
+
+    let transferencias = [];
+    let i = 0, j = 0;
+
+    while (i < deudores.length && j < acreedores.length) {
+        let deudor = deudores[i];
+        let acreedor = acreedores[j];
+        let pago = Math.min(deudor.monto, acreedor.monto);
+        
+        transferencias.push({ de: deudor.nombre, a: acreedor.nombre, monto: pago });
+
+        deudor.monto -= pago;
+        acreedor.monto -= pago;
+
+        if (deudor.monto < 0.01) i++;
+        if (acreedor.monto < 0.01) j++;
+    }
+
+    if (transferencias.length === 0) {
+        cajaResultados.innerHTML = `<p class="text-emerald-400 text-xs">Cuentas saldadas a la perfecciÃ³n.</p>`;
+    } else {
+        cajaResultados.innerHTML = transferencias.map(t => 
+            `<p>ðŸ”´ <strong>${t.de}</strong> le transfiere <strong>$${Math.ceil(t.monto)}</strong> a ðŸŸ¢ <strong>${t.a}</strong></p>`
+        ).join('');
+    }
+}
+const container = document.getElementById('tracker-app-container');
+
+// Base de datos local (Offline)
+let flota = JSON.parse(localStorage.getItem('flotaVehiculos')) || [
+    { id: 1, marca: "Haojue", modelo: "DR 160", services: [] },
+    { id: 2, marca: "Ford", modelo: "EcoSport", services: [] }
+];
+
+function renderizarFlota() {
+    container.innerHTML = `
+        <div class="space-y-4">
+            ${flota.map(v => `
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="font-bold text-blue-400">${v.marca} ${v.modelo}</h2>
+                        <button class="text-xs bg-slate-800 px-2 py-1 rounded text-slate-300 hover:text-white">+ Service</button>
+                    </div>
+                    ${v.services.length === 0 ? 
+                        `<p class="text-xs text-slate-500 italic">No hay registros aÃºn.</p>` : 
+                        `<ul class="text-xs text-slate-300 space-y-1">
+                            ${v.services.map(s => `<li>â€¢ ${s.fecha}: ${s.tipo} (${s.km} km)</li>`).join('')}
+                        </ul>`
+                    }
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+renderizarFlota();
+const container = document.getElementById('truco-app-container');
+
+// Estado inicial del partido
+let puntajes = { nosotros: 0, ellos: 0 };
+const limitePuntos = 30;
+
+function vibrar() {
+    // API nativa: vibra 40 milisegundos para dar feedback tÃ¡ctil en el celular
+    if (navigator.vibrate) navigator.vibrate(40);
+}
+
+function cambiarPuntaje(bando, valor) {
+    vibrar();
+    puntajes[bando] += valor;
+    
+    // Validaciones para que no baje de 0 ni pase de 30
+    if (puntajes[bando] < 0) puntajes[bando] = 0;
+    if (puntajes[bando] > limitePuntos) puntajes[bando] = limitePuntos;
+    
+    renderizarTruco();
+    
+    // Si alguien llega a 30, tiramos la alerta (con un mini delay para que llegue a pintar el nÃºmero 30 en pantalla)
+    if (puntajes[bando] === limitePuntos) {
+        setTimeout(() => alert(`Â¡GanÃ³ ${bando.toUpperCase()}! ðŸŽ‰`), 50);
+    }
+}
+
+function reiniciarPartida() {
+    vibrar();
+    if (confirm("Â¿QuerÃ©s reiniciar el partido a 0?")) {
+        puntajes.nosotros = 0;
+        puntajes.ellos = 0;
+        renderizarTruco();
+    }
+}
+
+// FunciÃ³n que genera visualmente los "fÃ³sforos" de a 5 puntos
+function generarFosforosHTML(puntos) {
+    if (puntos === 0) {
+        return `<span class="text-xs text-slate-600 italic">Cero puntos</span>`;
+    }
+
+    let html = '';
+    const cajasDeCinco = Math.floor(puntos / 5);
+    const resto = puntos % 5;
+
+    // Dibujamos las cajas completas de 5 puntos
+    for (let i = 0; i < cajasDeCinco; i++) {
+        html += `
+            <div class="w-8 h-8 flex items-center justify-center border-2 border-emerald-500/50 rounded bg-emerald-500/10 text-emerald-400 font-bold text-lg select-none">
+                åŒ
+            </div>
+        `;
+    }
+
+    // Dibujamos los palitos sueltos que sobran
+    if (resto > 0) {
+        // Repite la letra 'I' la cantidad de veces que marque el resto
+        let palitos = 'I'.repeat(resto).split('').join(' ');
+        html += `
+            <div class="w-8 h-8 flex items-center justify-center border border-dashed border-slate-600 rounded text-amber-400 font-mono font-bold text-sm tracking-widest select-none">
+                ${palitos}
+            </div>
+        `;
+    }
+
+    return `<div class="flex flex-wrap gap-2 justify-center min-h-[32px]">${html}</div>`;
+}
+
+function renderizarTruco() {
+    // Referencias rÃ¡pidas
+    const n = puntajes.nosotros;
+    const e = puntajes.ellos;
+
+    container.innerHTML = `
+        <div class="w-full flex flex-col gap-4">
+            
+            <div class="flex justify-between items-center bg-slate-900 p-2 rounded-xl border border-slate-800 shadow-sm">
+                <span class="text-xs font-bold text-slate-400 uppercase pl-2">Partido a 30 puntos</span>
+                <button id="btn-reset-truco" class="bg-slate-800 hover:bg-red-950 hover:text-red-400 text-xs px-3 py-1.5 rounded-lg transition font-medium border border-slate-700 hover:border-red-900">
+                    Reiniciar Chico
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col items-center justify-between shadow-md">
+                    <h2 class="text-base font-black text-emerald-400 tracking-wide">NOSOTROS</h2>
+                    <div class="text-6xl font-black font-mono my-4 text-white drop-shadow-md">${n}</div>
+                    
+                    <div class="w-full mb-6">
+                        <p class="text-[10px] text-center text-slate-500 uppercase font-bold tracking-wider mb-2">Buenas / Malas</p>
+                        ${generarFosforosHTML(n)}
+                    </div>
+
+                    <div class="flex gap-2 w-full mt-auto">
+                        <button id="btn-nos-menos" class="flex-1 bg-slate-800 active:bg-slate-700 py-3 rounded-xl font-bold text-xl text-slate-300 transition border border-slate-700">-1</button>
+                        <button id="btn-nos-mas" class="flex-[2] bg-emerald-600 active:bg-emerald-500 py-3 rounded-xl font-black text-2xl text-white transition shadow-lg shadow-emerald-900/20 border border-emerald-500">+1</button>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col items-center justify-between shadow-md">
+                    <h2 class="text-base font-black text-rose-400 tracking-wide">ELLOS</h2>
+                    <div class="text-6xl font-black font-mono my-4 text-white drop-shadow-md">${e}</div>
+                    
+                    <div class="w-full mb-6">
+                        <p class="text-[10px] text-center text-slate-500 uppercase font-bold tracking-wider mb-2">Buenas / Malas</p>
+                        ${generarFosforosHTML(e)}
+                    </div>
+
+                    <div class="flex gap-2 w-full mt-auto">
+                        <button id="btn-ell-menos" class="flex-1 bg-slate-800 active:bg-slate-700 py-3 rounded-xl font-bold text-xl text-slate-300 transition border border-slate-700">-1</button>
+                        <button id="btn-ell-mas" class="flex-[2] bg-rose-600 active:bg-rose-500 py-3 rounded-xl font-black text-2xl text-white transition shadow-lg shadow-rose-900/20 border border-rose-500">+1</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    `;
+
+    // AsignaciÃ³n de los "Event Listeners" a los botones reciÃ©n inyectados
+    document.getElementById('btn-reset-truco').addEventListener('click', reiniciarPartida);
+    document.getElementById('btn-nos-mas').addEventListener('click', () => cambiarPuntaje('nosotros', 1));
+    document.getElementById('btn-nos-menos').addEventListener('click', () => cambiarPuntaje('nosotros', -1));
+    document.getElementById('btn-ell-mas').addEventListener('click', () => cambiarPuntaje('ellos', 1));
+    document.getElementById('btn-ell-menos').addEventListener('click', () => cambiarPuntaje('ellos', -1));
+}
+
+// Ejecutamos el renderizado inicial la primera vez que se carga el script
+renderizarTruco();
